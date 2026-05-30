@@ -1,0 +1,56 @@
+{
+  "entities": {
+    "Category": {
+      "title": "Category",
+      "description": "A menu subcategory (e.g., pizza, drinks) with multi-language name and description",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique subcategory ID" },
+        "name": { "type": "string", "description": "Default French name" },
+        "name_ar": { "type": "string", "description": "Arabic translation" },
+        "name_en": { "type": "string", "description": "English translation" },
+        "name_es": { "type": "string", "description": "Spanish translation" },
+        "description": { "type": "string", "description": "Default French description" },
+        "description_ar": { "type": "string", "description": "Arabic description" },
+        "description_en": { "type": "string", "description": "English description" },
+        "description_es": { "type": "string", "description": "Spanish description" },
+        "icon": { "type": "string", "description": "Lucide icon string" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["id", "name"]
+    },
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "An interactive digital menu item with multi-language details, price, and tags",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique item ID" },
+        "name": { "type": "string", "description": "Default French name" },
+        "name_ar": { "type": "string", "description": "Arabic translation" },
+        "name_en": { "type": "string", "description": "English translation" },
+        "name_es": { "type": "string", "description": "Spanish translation" },
+        "description": { "type": "string", "description": "Default French description" },
+        "description_ar": { "type": "string", "description": "Arabic description" },
+        "description_en": { "type": "string", "description": "English description" },
+        "description_es": { "type": "string", "description": "Spanish description" },
+        "price": { "type": "number", "description": "Price in Dhs" },
+        "category": { "type": "string", "description": "Reference to Category ID" },
+        "image": { "type": "string", "description": "Optional image Unsplash url" },
+        "tags": { "type": "array", "description": "Badges e.g., MUST, NEW, POWER" },
+        "available": { "type": "boolean", "description": "Whether the item is in-stock" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Last updated timestamp" }
+      },
+      "required": ["id", "name", "price", "category", "available"]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": {
+      "schema": "Category",
+      "description": "Interactive subcategories"
+    },
+    "/items/{itemId}": {
+      "schema": "MenuItem",
+      "description": "Interactive menu products"
+    }
+  }
+}

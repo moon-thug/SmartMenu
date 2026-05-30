@@ -1,0 +1,6 @@
+{
+  "name": "Oh Crêpe - Digital Menu",
+  "description": "Un menu digital interactif élégant, réactif et personnalisable pour Oh Crêpe! Bistro avec gestionnaire d'administration de carte et générateur de chevalets QR code.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

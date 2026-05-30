@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    
+    // Reusable, hardened validation global helper primitives
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    
+    function incoming() {
+      return request.resource.data;
+    }
+    
+    function existing() {
+      return resource.data;
+    }
+
+    // Category Validation Model (Prevention of injection and shadow fields)
+    function isValidCategory(data) {
+      return data.keys().hasAll(['id', 'name'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && (!('name_ar' in data) || (data.name_ar is string && data.name_ar.size() <= 200))
+        && (!('name_en' in data) || (data.name_en is string && data.name_en.size() <= 200))
+        && (!('name_es' in data) || (data.name_es is string && data.name_es.size() <= 200))
+         && (!('description' in data) || (data.description is string && data.description.size() <= 1000))
+        && (!('description_ar' in data) || (data.description_ar is string && data.description_ar.size() <= 1000))
+        && (!('description_en' in data) || (data.description_en is string && data.description_en.size() <= 1000))
+        && (!('description_es' in data) || (data.description_es is string && data.description_es.size() <= 1000))
+        && (!('icon' in data) || (data.icon is string && data.icon.size() <= 100));
+    }
+
+    // MenuItem Validation Model (Prevention of size poisoning and denial of wallet)
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['id', 'name', 'price', 'category', 'available'])
+        && data.id is string && data.id.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.price is number && data.price >= 0 && data.price <= 10000
+        && data.category is string && data.category.size() <= 128
+        && data.available is bool
+        && (!('name_ar' in data) || (data.name_ar is string && data.name_ar.size() <= 200))
+        && (!('name_en' in data) || (data.name_en is string && data.name_en.size() <= 200))
+        && (!('name_es' in data) || (data.name_es is string && data.name_es.size() <= 200))
+        && (!('description' in data) || (data.description is string && data.description.size() <= 1000))
+        && (!('description_ar' in data) || (data.description_ar is string && data.description_ar.size() <= 1000))
+        && (!('description_en' in data) || (data.description_en is string && data.description_en.size() <= 1000))
+        && (!('description_es' in data) || (data.description_es is string && data.description_es.size() <= 1000))
+        && (!('image' in data) || (data.image is string && data.image.size() <= 2000))
+        && (!('tags' in data) || (data.tags is list && data.tags.size() <= 10));
+    }
+
+    // Matches for categories
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow create, update: if isValidId(categoryId) && isValidCategory(incoming());
+      allow delete: if isValidId(categoryId);
+    }
+    
+    // Matches for items
+    match /items/{itemId} {
+      allow read: if true;
+      allow create, update: if isValidId(itemId) && isValidMenuItem(incoming());
+      allow delete: if isValidId(itemId);
+    }
+  }
+}
