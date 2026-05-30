@@ -6,14 +6,25 @@
 import { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { QrCode, X } from 'lucide-react';
-import { collection, onSnapshot, writeBatch, doc } from 'firebase/firestore';
-import { db, seedDatabaseIfEmpty, handleFirestoreError, OperationType } from './utils/firebase';
 import { INITIAL_MENU_DATA } from './data';
 import { Category, MenuItem } from './types';
 import GuestMenu from './components/GuestMenu';
 import AdminPanel from './components/AdminPanel';
 import { Language, TRANSLATIONS } from './utils/translations';
-import { generateSelfContainedDataUri } from './utils/qrExporter';
+
+// =========================================================================
+// 1. ONE PERMANENT QR CODE (STATIC LINK)
+// =========================================================================
+// Replace this with your final live deployed digital menu URL.
+// The customer QR stand will strictly link to this URL and remain permanent.
+const BASE_URL: string = "https://YOUR_FREE_MENU_LINK.com";
+
+// =========================================================================
+// 2. CENTRAL SYNCHRONIZED CLOUD DATABASE ID
+// =========================================================================
+// If you want everyone to load from and edit the exact same master menu,
+// copy the generated Cloud ID shown in your Admin Panel and paste it here!
+const CLOUD_DATABASE_ID: string = "YOUR_GENERATED_CLOUD_ID_HERE";
 
 export default function App() {
   const [isAdminParamPresent] = useState(() => {
@@ -42,92 +53,129 @@ export default function App() {
     return 'fr';
   });
 
-  // Load and apply state from central Firestore syncing database in real-time
+  // Find active cloud database config
+  const getActiveCloudId = (): string => {
+    // 1. Check if the owner hardcoded an ID
+    if (
+      CLOUD_DATABASE_ID &&
+      CLOUD_DATABASE_ID !== "YOUR_GENERATED_CLOUD_ID_HERE" &&
+      CLOUD_DATABASE_ID.trim().length > 0
+    ) {
+      return CLOUD_DATABASE_ID.trim();
+    }
+
+    // 2. Check url param
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const dbParam = params.get('db');
+      if (dbParam && dbParam.trim().length > 0) {
+        return dbParam.trim();
+      }
+
+      // 3. Fallback to localStorage
+      const localId = localStorage.getItem('oh_crepe_cloud_id');
+      if (localId && localId.trim().length > 0) {
+        return localId.trim();
+      }
+    }
+    return '';
+  };
+
+  // Load and apply state from central anonymous cloud database
   useEffect(() => {
     let active = true;
 
-    const setupAndListen = async () => {
+    const loadCloudData = async () => {
       try {
-        // Run seed on load if database collections are empty
-        await seedDatabaseIfEmpty();
+        const id = getActiveCloudId();
+        if (id) {
+          // Pull live prices and categories from npoint cloud storage
+          const res = await fetch(`https://api.npoint.io/${id}`);
+          if (!res.ok) {
+            throw new Error(`Cloud database offline or not found for ID: ${id}`);
+          }
+          const loadedData = await res.json();
+          if (active) {
+            if (loadedData.categories && Array.isArray(loadedData.categories)) {
+              setCategories(loadedData.categories);
+            } else {
+              setCategories(INITIAL_MENU_DATA.categories);
+            }
+            if (loadedData.items && Array.isArray(loadedData.items)) {
+              setItems(loadedData.items);
+            } else {
+              setItems(INITIAL_MENU_DATA.items);
+            }
+          }
+        } else {
+          // No cloud database ID found. Auto-seed and create a brand new bin!
+          const payload = {
+            contents: {
+              categories: INITIAL_MENU_DATA.categories,
+              items: INITIAL_MENU_DATA.items
+            }
+          };
+          const res = await fetch("https://api.npoint.io/documents", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          if (!res.ok) {
+            throw new Error("Failed to auto-create cloud database bin from api.npoint.io");
+          }
+          const responseData = await res.json();
+          const newBinId = responseData.id;
+          if (newBinId) {
+            localStorage.setItem('oh_crepe_cloud_id', newBinId);
+            if (active) {
+              setCategories(INITIAL_MENU_DATA.categories);
+              setItems(INITIAL_MENU_DATA.items);
+              
+              // Sync parameter dynamically without full page reload
+              const params = new URLSearchParams(window.location.search);
+              params.set('db', newBinId);
+              const newUrl = `${window.location.pathname}?${params.toString()}`;
+              window.history.replaceState(null, '', newUrl);
+            }
+          }
+        }
       } catch (err) {
-        console.error("Auto seeding check failed", err);
-      }
-
-      if (!active) return;
-
-      // Realtime listener for categories
-      const unsubCategories = onSnapshot(
-        collection(db, 'categories'),
-        (snapshot) => {
-          if (!active) return;
-          const fetchedCats: Category[] = [];
-          snapshot.forEach((doc) => {
-            fetchedCats.push(doc.data() as Category);
-          });
-          if (fetchedCats.length > 0) {
-            setCategories(fetchedCats);
-          } else {
-            setCategories(INITIAL_MENU_DATA.categories);
-          }
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.LIST, 'categories');
+        console.error("Cloud JSON endpoint load failed, using local offline defaults", err);
+        if (active) {
+          setCategories(INITIAL_MENU_DATA.categories);
+          setItems(INITIAL_MENU_DATA.items);
         }
-      );
-
-      // Realtime listener for menu items
-      const unsubItems = onSnapshot(
-        collection(db, 'items'),
-        (snapshot) => {
-          if (!active) return;
-          const fetchedItems: MenuItem[] = [];
-          snapshot.forEach((doc) => {
-            fetchedItems.push(doc.data() as MenuItem);
-          });
-          if (fetchedItems.length > 0) {
-            setItems(fetchedItems);
-          } else {
-            setItems(INITIAL_MENU_DATA.items);
-          }
+      } finally {
+        if (active) {
           setIsLoading(false);
-        },
-        (error) => {
-          handleFirestoreError(error, OperationType.LIST, 'items');
         }
-      );
-
-      return () => {
-        unsubCategories();
-        unsubItems();
-      };
+      }
     };
 
-    const cleanupPromise = setupAndListen();
+    loadCloudData();
 
     return () => {
       active = false;
-      cleanupPromise.then((cleanup) => {
-        if (cleanup) cleanup();
-      });
     };
   }, []);
 
-  // Compute clean base URL (Stripping modes/excess params so QR is static)
+  // Compute clean base URL (Statically mapping to the permanent QR destination)
   const getStaticBaseUrl = (): string => {
-    if (typeof window === 'undefined') return 'https://oh-crepe.com';
-    return window.location.origin + window.location.pathname;
+    return BASE_URL;
   };
 
   const staticBaseUrl = getStaticBaseUrl();
 
   // Synced customer sharing URL with selected language
   const getCustomerShareUrl = (): string => {
-    if (typeof window === 'undefined') return 'https://oh-crepe.com';
     const params = new URLSearchParams();
     params.set('lang', language);
+    const activeId = getActiveCloudId();
+    if (activeId) {
+      params.set('db', activeId);
+    }
     const queryString = params.toString();
-    return `${staticBaseUrl}${queryString ? '?' + queryString : ''}`;
+    return `${BASE_URL}${queryString ? '?' + queryString : ''}`;
   };
 
   const customerShareUrl = getCustomerShareUrl();
@@ -135,39 +183,49 @@ export default function App() {
   // Update categories and items inside central master cloud data atomically
   const handleSaveMenuData = async (newCategories: Category[], newItems: MenuItem[]) => {
     setIsSaving(true);
+    let id = getActiveCloudId();
     try {
-      const batch = writeBatch(db);
-
-      // 1. Process categories deletion
-      const newCatIds = new Set(newCategories.map(c => c.id));
-      categories.forEach(oldCat => {
-        if (!newCatIds.has(oldCat.id)) {
-          batch.delete(doc(db, 'categories', oldCat.id));
+      const payload = {
+        contents: {
+          categories: newCategories,
+          items: newItems
         }
-      });
+      };
 
-      // 2. Process categories additions/updates
-      newCategories.forEach(cat => {
-        batch.set(doc(db, 'categories', cat.id), cat);
-      });
-
-      // 3. Process items deletion
-      const newItemIds = new Set(newItems.map(i => i.id));
-      items.forEach(oldItem => {
-        if (!newItemIds.has(oldItem.id)) {
-          batch.delete(doc(db, 'items', oldItem.id));
+      if (!id) {
+        const res = await fetch("https://api.npoint.io/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          throw new Error("Failed to dynamically establish a cloud database bin on save trigger");
         }
-      });
+        const data = await res.json();
+        id = data.id;
+        if (id) {
+          localStorage.setItem('oh_crepe_cloud_id', id);
+          const params = new URLSearchParams(window.location.search);
+          params.set('db', id);
+          const newUrl = `${window.location.pathname}?${params.toString()}`;
+          window.history.replaceState(null, '', newUrl);
+        }
+      } else {
+        const res = await fetch(`https://api.npoint.io/documents/${id}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to save updated menu data to: https://api.npoint.io/documents/${id}`);
+        }
+      }
 
-      // 4. Process items additions/updates
-      newItems.forEach(item => {
-        batch.set(doc(db, 'items', item.id), item);
-      });
-
-      // Atomically apply changes to Firebase Firestore db
-      await batch.commit();
+      setCategories(newCategories);
+      setItems(newItems);
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, 'batch_update');
+      console.error("Failed to commit changes to cloud storage", err);
+      alert("Erreur de sauvegarde: impossible de synchroniser les modifications en ligne. Veuillez réessayer.");
     } finally {
       setIsSaving(false);
     }
@@ -185,8 +243,8 @@ export default function App() {
     }
   };
 
-  // QR string source (Directly encoding the compressed self-contained Data URI with menu data)
-  const qrCodeImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(generateSelfContainedDataUri(categories, items))}`;
+  // QR string source (Strictly static BASE_URL)
+  const qrCodeImageSrc = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(BASE_URL)}`;
 
   // Translation access
   const t = TRANSLATIONS[language];
@@ -248,6 +306,7 @@ export default function App() {
             categories={categories}
             items={items}
             appUrl={staticBaseUrl}
+            cloudId={getActiveCloudId()}
             onSaveData={handleSaveMenuData}
             onClose={() => setShowAdmin(false)}
             language={language}

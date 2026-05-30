@@ -15,7 +15,6 @@ import {
 import { Category, MenuItem } from '../types';
 import { getAutoFoodImage } from '../utils/imageHelper';
 import { Language, TRANSLATIONS } from '../utils/translations';
-import { generateSelfContainedDataUri } from '../utils/qrExporter';
 
 
 interface AdminPanelProps {
@@ -24,6 +23,7 @@ interface AdminPanelProps {
   onSaveData: (categories: Category[], items: MenuItem[]) => void;
   onClose: () => void;
   appUrl: string;
+  cloudId: string;
   language: Language;
   setLanguage: (lang: Language) => void;
 }
@@ -43,6 +43,7 @@ export default function AdminPanel({
   onSaveData, 
   onClose, 
   appUrl,
+  cloudId,
   language,
   setLanguage
 }: AdminPanelProps) {
@@ -203,8 +204,8 @@ export default function AdminPanel({
     alert(t.adminApplyDone);
   };
 
-  // QR Code URL Generator (directly encoding dynamic self-contained offline html menu)
-  const actualTargetUrl = generateSelfContainedDataUri(lclCategories, lclItems);
+  // QR Code URL Generator (directly encoding static free menu link)
+  const actualTargetUrl = appUrl;
   const qrCodeFinalSrc = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&color=${qrColor.replace('#', '')}&data=${encodeURIComponent(actualTargetUrl)}`;
 
   const handleDownloadClientQR = () => {
@@ -971,6 +972,15 @@ export default function AdminPanel({
                 <div className="text-center mt-2.5 text-[10px] text-neutral-400 font-mono">
                   {t.adminApplyFooter}
                 </div>
+                {cloudId && (
+                  <div className="bg-neutral-50 px-3 py-2 rounded-lg border border-neutral-200 text-left mt-3">
+                    <span className="block text-[8px] font-sans leading-none tracking-wider text-neutral-400 uppercase font-bold">Base de données en ligne synchronisée</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 mt-1 leading-normal">
+                      <span className="font-mono text-[10.5px] text-[#d9383a] font-bold select-all bg-red-50/50 px-1.5 py-0.5 rounded border border-red-100">{cloudId}</span>
+                      <span className="text-[8.5px] font-sans text-neutral-500">Définissez cette valeur dans la constante <code>CLOUD_DATABASE_ID</code> de <code>App.tsx</code> pour unifier globalement tous les appareils.</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
